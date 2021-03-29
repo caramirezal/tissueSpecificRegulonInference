@@ -24,6 +24,8 @@ library(gplots)
 library(enrichR)
 library(highcharter)
 library(viridis)
+library(AUCell)
+library(GSEABase)
 
 knitr::opts_chunk$set(
         warning = FALSE, 
@@ -38,9 +40,6 @@ knitr::opts_knit$set(
 )
 ```
 
-```{r parameters}
-
-```
 
 ### Data pre-processing
 
@@ -264,63 +263,15 @@ records.sum.df %>%
         
 ```
 
-### Top frequent TFs in tissues
+## TFs across tissues in TOBIAS output
 
-The following lolipop chart shows the frequency of appearance of TFs for all the
-local footprints inferred by TOBIAS. 
-
-```{r frequency_tfs, fig.height=20, fig.width=12}
-freq.plots <- lapply(1:length(merged_tfbs), 
-       function(i) 
-         merged_tfbs[i][[1]] %>%
-         dplyr::select(tf) %>%
-         group_by(tf) %>%
-         summarise(tf_frequency=n()) %>%
-         arrange(desc(tf_frequency)) %>%
-         head(20) %>%
-         arrange(tf_frequency) %>%
-         mutate(tf=factor(tf, tf)) %>%
-         ggplot(aes(x=tf, y=tf_frequency)) +
-                geom_segment(aes(x=tf, xend=tf, y=0, yend=tf_frequency), 
-                             color='grey') +
-                geom_point(size=3, color="#69b3a2") +
-                coord_flip() +
-                theme_ipsum() +
-                xlab('') +
-                ylab('Frequency of TF') +
-                ggtitle(names(merged_tfbs)[i])
-)
-grid.arrange(grobs=freq.plots, ncol=2)
+```{r tf_tobias}
+tfs_tobias<- lapply(merged_tfbs, function(x) unique(x$tf))
+upset(fromList(tfs_tobias), nsets = 7)
 ```
 
-### Top target genes in tissues
 
-The following lolipop chart shows the frequency of appearance of target genes in all the local footprints inferred by TOBIAS. 
-
-```{r more_frequent_tfs, fig.height=20, fig.width=12}
-freq.plots <- lapply(1:length(merged_tfbs), 
-       function(i) 
-         merged_tfbs[i][[1]] %>%
-         dplyr::select(gene_name) %>%
-         group_by(gene_name) %>%
-         summarise(target_frequency=n()) %>%
-         arrange(desc(target_frequency)) %>%
-         head(20) %>%
-         arrange(target_frequency) %>%
-         mutate(gene_name=factor(gene_name, gene_name)) %>%
-         ggplot(aes(x=gene_name, y=target_frequency)) +
-                geom_segment(aes(x=gene_name, xend=gene_name, y=0,
-                                 yend=target_frequency), 
-                             color='grey') +
-                geom_point(size=3, color="red") +
-                coord_flip() +
-                theme_ipsum() +
-                xlab('') +
-                ylab('Frequency of targets') +
-                ggtitle(names(merged_tfbs)[i])
-)
-grid.arrange(grobs=freq.plots, ncol=2)
-```
+There are 746 files for the jaspar motifs that I've used.
 
 # Inference of modules 
 
@@ -355,14 +306,6 @@ scenic_corrmodules <- scenic_adjacencies %>%
   dplyr::filter(importance >= quantile(importance, 
                                        probs = importance_threshold))
 
-#dim(scenic_corrmodules)
-# Summary
-#summary_modules <- scenic_corrmodules %>% 
-#  summarise(n = n()) %>% 
-#  summary()
-
-#kable(summary_modules)
-#nrow(scenic_corrmodules)
 ```
 
 After filtering the number of TFs in modules inferred from GRNBoost is 
@@ -376,6 +319,7 @@ ATACSeq data. The next table summarize the number of TF, targets and TF/targets 
 ATACSeq footprints from the TOBIAS analysis.
 
 ```{r matching_GRNBoost2_TOBIAS}
+
 ## creating a column with TF/target interactions
 merged_tfbs <- lapply(merged_tfbs, 
                       function(x) {
@@ -403,6 +347,7 @@ merged_tfbs <- lapply(merged_tfbs,
                         return(df)
 })
 
+## filtering interactions
 interactions_tissues <- lapply(merged_tfbs, 
                                function(x){
                                  select(x, tf, gene_name, 
@@ -416,33 +361,56 @@ interactions_tissues <- lapply(interactions_tissues,
 
 match_df <- data.frame(
   tissue = names(interactions_tissues),
-  n_tf = unlist(lapply(interactions_tissues, function(x) length(unique(x$'tf')))),
-  n_targets =unlist(lapply(interactions_tissues, function(x) length(unique(x$'gene_name')))),
-  n_shared_interactions = unlist(lapply(interactions_tissues, function(x) sum(x$'is_in_modules')))
+  n_filtered_interactions = unlist(lapply(interactions_tissues, 
+                                          function(x) sum(x$'is_in_modules'))),
+  n_tf = unlist(lapply(interactions_tissues, function(x) 
+                                      length(unique(x$'tf')))),
+  n_targets =unlist(lapply(interactions_tissues, function(x) length(unique(x$'gene_name'))))
 )
 
 kable(select(match_df, -tissue))
 ```
 
-## Tissue specific networks
+## Filtering interactions
 
 The following upset plot shows the intersections of regulatory interactions 
 from the combined pySCENIC modules filtered using the ATACSeq data. 
+
+## Fitered interactions across tissues
 
 ```{r tissue_specific_interactions, fig.width=16, fig.height=12}
 interactions.tissue <- lapply(interactions_tissues, function(x) x$'interaction')
 upset(data = fromList(interactions.tissue))
 ```
 
-```{r}
-sets <- venn(interactions.tissue, show.plot = FALSE)
-interactions.unique <- attributes(sets)$intersections[names(interactions.tissue)]
-#lapply(interactions.unique, length)
+## TFs in filtered interactions across tissues
+
+```{r, shared_tf_tissues, fig.width=16, fig.height=12}
+tf.tissues <- lapply(interactions_tissues, 
+                      function(x) {
+                        unique(x$tf)
+})
+
+upset(fromList(tf.tissues), nsets = 7)
 ```
 
-We extracted only tissue specific interactions. In the following barplots an 
-enrichment analysis is shown for tissue specific targets extracted from the 
-above specific interactions.
+## Targets in filtered interactions across tissues
+
+```{r, shared_targets_tissues, fig.width=16, fig.height=12}
+target.tissues <- lapply(interactions_tissues, 
+                      function(x) {
+                        unique(x$gene_name)
+})
+
+upset(fromList(target.tissues), nsets = 7)
+```
+
+
+
+## Enrichment analysis
+
+From the tissue specific interactions an enrichment analysis were carried out 
+only using tissue specific targets.
 
 
 ```{r tf_frequency_specific_regulons}
@@ -460,20 +428,7 @@ unique.df <- lapply(unique.interactions,
        function(x) 
          data.frame(tf=gsub('.*_', '', x),
                           target=gsub('_.*', '', x)))
-#lapply(unique.df, 
-#       function(x) x %>%
-#                    group_by(tf) %>%
-#                    summarise(n=n()) %>%
-#                    arrange(desc(n)) %>%
-#                    mutate(tf=factor(tf, tf)) %>%
-#         head(10) %>%
-#         ggplot(aes(x=tf, y=n)) +
-#              geom_bar(stat = 'identity', fill='steelblue') +
-#        coord_flip() +
-#        theme_bw() +
-#        theme(panel.background = element_blank()) +
-#         xlab('') +
-#         ylab('Frequency') ) 
+
 ```
 
 
@@ -486,7 +441,6 @@ unique.targets <- lapply(unique.df,
                          function(x) 
                            unique(x$target)
                          )
-#lapply(unique.targets, length)
 
 specific.targets <- list()
 for (name in names(unique.targets)){
@@ -496,19 +450,18 @@ for (name in names(unique.targets)){
   specific.targets[name][[1]] <- tissue_interactions[! tissue_interactions %in%
                                                           complement_interactions]
 }
-#lapply(specific.targets, length)
 
 
 enrich.targets <- lapply(
   specific.targets, function(x) 
     enrichr(x,
-            databases = c("GO_Biological_Process_2018")
+            databases = c("ARCHS4_Tissues")
     )
 )
 
 enrich.plots <- lapply(enrich.targets, 
                        function(x) 
-                         plotEnrich(x$GO_Biological_Process_2018, 
+                         plotEnrich(x$ARCHS4_Tissues, 
                                     showTerms = 20, 
                                     numChar = 100, 
                                     y = "Count", 
@@ -564,4 +517,62 @@ enrich.plots[6][[1]]
 enrich.plots[7][[1]]
 ```
 
-#
+# Scoring cells with regulons
+
+```{r}
+list.files('/media/ag-cherrmann/projects/10_charite_covid19/subprojects/mouse_atlas_TF_activity/adult_9tissues/results/scrna/SCENIC/')
+
+## Loading expression matrix
+# Reading gene names
+mouse.sc.mtx <- read.table(
+  file = '/media/ag-cherrmann/projects/10_charite_covid19/subprojects/mouse_atlas_TF_activity/adult_9tissues/results/scrna/SCENIC/rnaseq_counts.tsv',
+  sep = '\t'
+)
+colnames(mouse.sc.mtx) <- toupper(colnames(mouse.sc.mtx))
+dim(mouse.sc.mtx)
+
+## filtering regulons with less than 20 targets
+regulon_size_th <- 20
+interactions_tissues.filtered <- lapply(
+  interactions_tissues, 
+    function(x) {
+      ## regulon size
+      tf.count <- table(x$tf)
+      tfs_filtered <- tf.count[tf.count > regulon_size_th]
+      filter(x, tf %in% names(tfs_filtered))
+    }
+)
+lapply(interactions_tissues.filtered, dim)
+
+## Filtering matrix - Using only genes in targets
+all.targets <- unique(unlist(unique.targets))
+shared.features <- intersect(all.targets, colnames(mouse.sc.mtx))
+mouse.sc.mtx <- mouse.sc.mtx[, shared.features]
+mouse.sc.mtx <- as.matrix(mouse.sc.mtx)
+dim(mouse.sc.mtx)
+
+## Extracting regulons by tissue
+regulons.tissues <- lapply(interactions_tissues.filtered, 
+                           function(x) {
+                             split(x=x$gene_name, f=x$tf)  
+                           })
+
+## Ranking cells
+cells_rankings <- AUCell_buildRankings(t(mouse.sc.mtx), 
+                                       nCores=10)
+
+## Scoring cells
+regulons.tissues.up <- lapply(regulons.tissues, 
+                              function(x) lapply(x, toupper) )
+auc_scores <- lapply(regulons.tissues.up,
+                           function(x) {
+                             AUCell_calcAUC(x, cells_rankings)
+                           })
+saveRDS(auc_scores,
+        'analysis/auc_scores_mouse_atlas.rds',
+        compress = TRUE)
+
+## Scoring cells
+#auc.mtx <- getAUC(cells_AUC)
+```
+
